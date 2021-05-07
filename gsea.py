@@ -46,7 +46,7 @@ class CombatTbGSEA:
             "MATCH (t:GOTerm) <-[:ASSOCIATED_WITH]- "
             "(:Protein) <-[:ENCODES]- (g:Gene) "
             + filter
-            + " RETURN t.accession, t.name, count(g) "
+            + " RETURN t.accession, t.name, t.ontology, count(g) "
             "AS t_count ORDER BY t_count DESC"
         )
         result = tx.run(query)
@@ -78,7 +78,7 @@ def enrichment_analysis(geneset, mode="over", multipletest_method="fdr_bh"):
     background_gene_count = db.count_genes()
     goterm_prevalence = db.get_goterm_prevalence()
     goterm_prevalence_dict = dict()
-    for goterm_id, _, count in goterm_prevalence:
+    for goterm_id, _, _, count in goterm_prevalence:
         goterm_prevalence_dict[goterm_id] = count
 
     gs_goterm_prevalence = db.get_goterm_prevalence(gene_list=geneset)
@@ -88,7 +88,7 @@ def enrichment_analysis(geneset, mode="over", multipletest_method="fdr_bh"):
         fe_test_mode = "greater"
     else:
         fe_test_mode = "less"
-    for goterm_id, goterm_name, gs_goterm_count in gs_goterm_prevalence:
+    for goterm_id, goterm_name, go_division, gs_goterm_count in gs_goterm_prevalence:
         # Fisher Exact test matrix
         #          GO term XXX      Not GO Term XXX
         # geneset     A                 B
@@ -99,13 +99,13 @@ def enrichment_analysis(geneset, mode="over", multipletest_method="fdr_bh"):
             (background_goterm_count, background_gene_count - background_goterm_count),
         )
         _, p_val = fisher_exact(fe_matrix, alternative=fe_test_mode)
-        p_vals.append((goterm_id, goterm_name, p_val))
-    p_vals = sorted(p_vals, key=itemgetter(2))
-    goterm_ids, goterm_names, uncorr_p_vals = zip(*p_vals)
+        p_vals.append((goterm_id, goterm_name, go_division, p_val))
+    p_vals = sorted(p_vals, key=itemgetter(3))
+    goterm_ids, goterm_names, go_division, uncorr_p_vals = zip(*p_vals)
     _, corrected_p_vals, _, _ = multipletests(
         uncorr_p_vals, is_sorted=True, method=multipletest_method
     )
-    p_vals = zip(goterm_ids, goterm_names, uncorr_p_vals, corrected_p_vals)
+    p_vals = zip(goterm_ids, goterm_names, go_division, uncorr_p_vals, corrected_p_vals)
     # for goterm_it, goterm_name, p_val, corr_p_val in p_vals:
     #     print(goterm_it, goterm_name, p_val, corr_p_val)
     return p_vals
@@ -128,12 +128,10 @@ def analyse_geneset(geneset_file, output_file, mode="over", multipletest_corr="B
         multi = "bonferroni"
     results = enrichment_analysis(geneset, mode=mode, multipletest_method=multi)
     print(
-        "GO Term ID\tGO Term Name\tCorrected p-val\tUncorrected p-val", file=output_file
+        "GO Term ID\tGO Term Name\tCorrected p-val\tUncorrected p-val\tGO Division", file=output_file
     )
-    for goterm_id, goterm_name, uncorr_p_val, corr_p_val in results:
-        print(
-            goterm_id, goterm_name, corr_p_val, uncorr_p_val, file=output_file, sep="\t"
-        )
+    for goterm_id, goterm_name, go_division, uncorr_p_val, corr_p_val in results:
+        print(f'{goterm_id}\t{goterm_name}\t{corr_p_val:.4}\t{uncorr_p_val:.4}\t{go_division}\n')
     output_file.close()
 
 
